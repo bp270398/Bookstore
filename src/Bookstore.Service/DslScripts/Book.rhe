@@ -1,0 +1,477 @@
+Module Bookstore
+{
+
+AutoDetectSqlDependencies;
+
+    Entity Book
+    {
+        ShortString Code { AutoCode; Required; }
+        ShortString Title { Required; }
+        Integer NumberOfPages;
+        Reference Author Bookstore.Person;
+        Reference CreatedBy Common.Principal { CreatedBy; }
+
+        ItemFilter LongBooks 'item => item.NumberOfPages >= 500';
+        
+        Logging { AllProperties; }
+
+
+        ItemFilter CommonMisspelling 'book => book.Title.Contains("curiousity")';
+        InvalidData CommonMisspelling 'It is not allowed to enter misspelled word "curiousity". Please use "curiosity" instead.';
+
+        ItemFilter ForeignAuthorXWithComments 'item =>
+            item.Author.Name.StartsWith("X")
+            && item.Extension_ForeignBook.ID != null
+            && _domRepository.Bookstore.Comment.Subquery.Where(c => c.BookID == item.ID).Count() >= 3';
+
+        ComposableFilterBy LongBooks3 '(query, repository, parameter) =>
+        {
+            var filtered = query.Where(item => item.NumberOfPages >= parameter.MinimumPages);
+            if (parameter.ForeignBooksOnly == true)
+                filtered = filtered.Where(item => item.Extension_ForeignBook.ID != null);
+            return filtered;
+        }';
+
+        FilterBy ComplexSearch '(repository, parameter) =>
+        {
+            var query = repository.Bookstore.Book.Query(item => item.NumberOfPages >= parameter.MinimumPages);
+            if (parameter.ForeignBooksOnly == true)
+                query = query.Where(item => item.Extension_ForeignBook.ID != null);
+            Book[] books = query.ToSimple().ToArray();
+
+            if (parameter.MaskTitles == true)
+                foreach (var book in books.Where(b => !string.IsNullOrEmpty(b.Title)))
+                    book.Title = book.Title.First() + "***" + book.Title.Last();
+
+            return books;
+        }';
+    }
+    Entity UncertainWord
+    {
+        ShortString Word;
+    }
+
+    Entity WishList
+    {
+        ShortString BookTitle;
+        Bool HighPriority;
+    }
+
+    Parameter LongBooks3
+    {
+        Integer MinimumPages;
+        Bool ForeignBooksOnly;
+    }
+
+    Parameter ComplexSearch
+    {
+        Integer MinimumPages;
+        Bool ForeignBooksOnly;
+        Bool MaskTitles;
+    }
+
+    Entity Person
+    {
+        ShortString Name;
+    }
+
+    Entity Comment
+    {
+        Reference Book { Detail; }
+        LongString Text;
+    }
+
+    Entity ChildrensBook
+    {
+        Extends Bookstore.Book;
+
+        Integer AgeFrom;
+        Integer AgeTo;
+        IntegerRange AgeFrom AgeTo; // A simple validation.
+    }
+
+    Entity ForeignBook
+    {
+        Extends Bookstore.Book;
+
+        ShortString OriginalLanguage;
+        Reference Translator Bookstore.Person;
+    }
+
+    Entity Topic
+    {
+        ShortString Name { Unique; Required; }
+    }
+
+    Entity BookTopic
+    {
+        Reference Book { Detail; }
+        Reference Topic { Required; }
+
+        UniqueMultiple 'Book Topic';
+    }
+
+    Browse BookGrid Bookstore.Book
+    {
+        Take Code;
+        Take Title;
+        Take 'Author.Name';
+        Take TranslatorName 'Extension_ForeignBook.Translator.Name';
+        Take NumberOfComments 'Extension_BookInfo.NumberOfComments';
+
+        // This query is an alternative data source for BookGrid.
+        // Instead of reading data from the `Bookstore.Book`, it provides the new data from WantedBooks.
+        Query 'Bookstore.WantedBooks' 'parameter =>
+            {
+                var wishList = _domRepository.Bookstore.WishList.Query();
+                if (parameter != null && parameter.HighPriorityOnly == true)
+                    wishList = wishList.Where(item => item.HighPriority == true);
+
+                var wantedBooks = wishList.Select(wish => new Common.Queryable.Bookstore_BookGrid
+                {
+                    // All properies must be declared here, otherwise EF will throw a NotSupportedException.
+                    ID = wish.ID,
+                    Code = null,
+                    Title = wish.BookTitle,
+                    AuthorName = "unknown",
+                    TranslatorName = null,
+                    NumberOfComments = null
+                });
+                return wantedBooks;
+            }';
+    }
+
+    Parameter WantedBooks
+    {
+        Bool HighPriorityOnly;
+    }
+
+    SqlQueryable BookInfo <SQL\BookInfo.sql>
+    {
+        Extends Bookstore.Book;
+        Integer NumberOfComments;
+
+        AutodetectSqlDependencies;
+    }
+
+    Browse BookGrid Bookstore.Book
+    {
+        Take Code;
+        Take Title;
+        Take 'Author.Name';
+        Take TranslatorName 'Extension_ForeignBook.Translator.Name';
+        Take NumberOfComments 'Extension_BookInfo.NumberOfComments';
+    }
+
+    Computed ExpectedBookRating 'repository =>
+        {
+            var books = repository.Bookstore.Book.Query()
+                .Select(b =>
+                    new
+                    {
+                        b.ID,
+                        b.Title,
+                        IsForeign = b.Extension_ForeignBook.ID != null
+                    })
+                .ToList();
+
+            var ratings = new List<ExpectedBookRating>();
+            foreach (var book in books)
+            {
+                decimal rating = 0;
+
+                if (book.Title?.IndexOf("super", StringComparison.InvariantCultureIgnoreCase) >= 0)
+                    rating += 100;
+
+                if (book.Title?.IndexOf("great", StringComparison.InvariantCultureIgnoreCase) >= 0)
+                    rating += 50;
+
+                if (book.IsForeign)
+                    rating *= 1.2m;
+
+                ratings.Add(new ExpectedBookRating { ID = book.ID, Rating = rating });
+            }
+
+            return ratings.ToArray();
+        }'
+    {
+        Extends Bookstore.Book;
+        Decimal Rating;
+    }
+
+
+    Entity Shipment
+    {
+        ShortString TargetAddress;
+        DateTime DeliveryDate;
+        DateTime CreatedAt { CreationTime; }
+
+        Is Bookstore.ShipmentEvent 'Creating'
+        {
+            Implements Bookstore.ShipmentEvent.EffectiveSince "CreatedAt";
+            Implements Bookstore.ShipmentEvent.Shipment "ID";
+            Implements Bookstore.ShipmentEvent.NewStatus Bookstore.ShipmentStatus.Preparing;
+            // Note: "Implements" can contain custom SQL code, or a reference to hardcoded entry (see ShipmentStatus).
+        }
+    }
+
+    Entity ShipmentItem
+    {
+        Reference Shipment { Detail; }
+        Reference Book;
+    }
+
+    Browse ShipmentGrid Bookstore.Shipment
+    {
+        Take TargetAddress;
+        Take DeliveryDate;
+        Take CurrentStatus 'Extension_ShipmentCurrentState.Status.Name';
+    }
+
+    Hardcoded ShipmentStatus
+    {
+        Entry Preparing;
+        Entry Approved;
+        Entry DeliveryInProgress;
+        Entry Delivered;
+    }
+    Polymorphic ShipmentEvent
+    {
+        DateTime EffectiveSince;
+        Reference Shipment;
+        Reference NewStatus Bookstore.ShipmentStatus;
+    }
+
+    Entity ApproveShipment
+    {
+        DateTime EffectiveSince { CreationTime; }
+        Reference Shipment;
+
+        LongString Explanation { Required; }
+
+        Is Bookstore.ShipmentEvent
+        {
+            Implements Bookstore.ShipmentEvent.NewStatus Bookstore.ShipmentStatus.Approved;
+        }
+    }
+
+    Entity DeliveryStarted
+    {
+        DateTime EffectiveSince { CreationTime; }
+        Reference Shipment;
+
+        Is Bookstore.ShipmentEvent
+        {            
+            Implements Bookstore.ShipmentEvent.NewStatus Bookstore.ShipmentStatus.DeliveryInProgress;
+        }
+    }
+
+    Entity DeliveryFinished
+    {
+        DateTime EffectiveSince { CreationTime; }
+        Reference Shipment;
+
+        Is Bookstore.ShipmentEvent
+        {            
+            Implements Bookstore.ShipmentEvent.NewStatus Bookstore.ShipmentStatus.Delivered;
+        }
+    }
+
+    SqlQueryable ComputeShipmentCurrentState <SQL\ComputeShipmentCurrentState.sql>
+    {
+        Extends Bookstore.Shipment;
+        Reference Status Bookstore.ShipmentStatus; // Preparing => Approved => DeliveryInProgress => Delivered.
+
+        // ChangesOnChangedItems Bookstore.ApproveShipment
+        //     'Guid[]'
+        //     'changedItems => changedItems
+        //         .Select(item => item.ShipmentID.Value)
+        //         .ToArray()';
+
+        ChangesOnLinkedItems Bookstore.ApproveShipment.Shipment;
+        ChangesOnLinkedItems Bookstore.DeliveryStarted.Shipment;
+        ChangesOnLinkedItems Bookstore.DeliveryFinished.Shipment;
+
+        AutodetectSqlDependencies;
+    }
+
+    Entity ShipmentCurrentState
+    {
+        ComputedFrom Bookstore.ComputeShipmentCurrentState
+        {
+            KeepSynchronized;
+            AllProperties;
+        }
+    }
+
+    Hardcoded Genre
+    {
+        ShortString Label; // Short text displayed to user.
+        LongString Description;
+        Bool IsFiction;
+
+        Entry ScienceFiction
+        {
+            Value Label 'Science fiction';
+            Value Description 'A speculative fiction with imagined elements that are inspired by natural sciences or social sciences.';
+            Value IsFiction 1;
+        }
+
+        Entry Biography
+        {
+            Value Label 'Biography';
+            Value Description 'A written narrative of a person''s life.';
+            Value IsFiction 0;
+        }
+    }
+
+    Hardcoded ShipmentStatus
+    {
+        Entry Preparing;
+        Entry Approved;
+        Entry Delivered;
+    }
+
+    Polymorphic ShipmentEvent
+    {
+        DateTime EffectiveSince;
+        Reference Shipment;
+        Reference NewStatus Bookstore.ShipmentStatus;
+    }
+
+    Entity ApproveShipment
+    {
+        DateTime EffectiveSince { CreationTime; }
+        Reference Shipment;
+
+        Is Bookstore.ShipmentEvent
+        {
+            Implements Bookstore.ShipmentEvent.NewStatus Bookstore.ShipmentStatus.Approved;
+
+            // Slower alternative: Calling the database function:
+            //Implements Bookstore.ShipmentEvent.NewStatus "Bookstore.ShipmentStatus_Approved()";
+        }
+    }
+
+    Action InsertRandomBook
+        '(parameter, repository, userInfo) => Bookstore.Service.RandomBookGenerator.InsertBooks(repository, parameter.NumberOfBooks)'
+    {
+        Integer NumberOfBooks;
+    }
+
+    Entity Disposal
+    {
+        Reference Book { Required; }
+        LongString Explanation { Required; }
+        DateTime EffectiveSince { CreationTime; }
+
+        ItemFilter ImportantBookExplanation 'item => item.Book.Title.Contains("important") && item.Explanation.Length < 50';
+        InvalidData ImportantBookExplanation 'When disposing an important book, the explanation should be at least 50 characters long.'
+        {
+            MarkProperty Bookstore.Disposal.Explanation;
+            ErrorMetadata 'Severity' 'Low';
+        }
+
+        ItemFilter UncertainExplanations 'disposal => _domRepository.Bookstore.UncertainWord.Subquery.Any(uncertain => disposal.Explanation.Contains(uncertain.Word))';
+        InvalidData UncertainExplanations 'The explanation "{0}{1}" should not contain word "{2}". Book: {3}.'
+        {
+            MessageParametersItem 'item => new
+                {
+                    item.ID,
+                    P0 = item.Explanation.Substring(0, 10),
+                    P1 = item.Explanation.Length > 10 ? "..." : "",
+                    P2 = _domRepository.Bookstore.UncertainWord.Subquery
+                        .Where(uncertain => item.Explanation.Contains(uncertain.Word))
+                        .Select(uncertain => uncertain.Word).FirstOrDefault(),
+                    P3 = item.Book.Title
+                }';
+        }
+
+        ComposableFilterBy UncertainExplanations2 '(query, repository, parameter) =>
+        {
+            var uncertainWords = _domRepository.Bookstore.UncertainWord.Query().Select(uncertain => uncertain.Word);
+            return query.Where(disposal => uncertainWords.Any(word => disposal.Explanation.Contains(word)));
+        }';
+
+        InvalidData UncertainExplanations2 'The explanation contains uncertain words. (v2)';
+
+    }
+
+    Parameter UncertainExplanations2;
+
+    Entity Employee
+    {
+        Integer IdentificationNumber;
+        ShortString LastName { Required; }
+        ShortString FirstName { Required; }
+        ShortString Code { RegExMatch "\d{7,10}" "Code must have 7 to 10 digits."; }
+        DateTime WorkStarted { Required; }
+        DateTime WorkFinished;
+        Integer TestPeriod { MinValue 1; MaxValue 12; }
+        ShortString Iban { Required; Unique; MinLength 21; MaxLength 21; }
+
+        UniqueMultiple 'LastName FirstName';
+
+        ItemFilter FinishBeforeStart 'employee => employee.WorkFinished != null
+            && employee.WorkFinished.Value < employee.WorkStarted.Value';
+        InvalidData FinishBeforeStart 'It is not allowed to enter a WorkFinished time before the WorkStarted time.';
+    }
+
+     Action CreatePrincipal '(parameter, repository, userInfo) =>
+    {
+        var principal = new Common.Principal
+        {
+            ID = parameter.ID ?? Guid.NewGuid(),
+            Name = parameter.Name
+        };
+        repository.Common.Principal.Insert(principal);
+    }'
+    {
+        Guid ID;
+        ShortString Name;
+    }
+
+    Parameter PersonFilter
+    {
+        ShortString NamePattern;
+        Integer LimitResultCount;
+    }
+
+    SqlProcedure ComputePersonInfo
+        "@NamePattern NVARCHAR(256), @LimitResultCount INT"
+        "
+            SELECT TOP (@LimitResultCount)
+                p.ID, Name, NameLength = LEN(p.Name), PersonID = p.ID
+            FROM
+                Bookstore.Person p
+            WHERE
+                p.Name LIKE '%' + @NamePattern + '%'
+            ORDER BY
+                p.Name
+        ";
+
+    Computed PersonInfo 'repository => { throw new Rhetos.UserException("Use filter \"Bookstore.PersonFilter\" to read the data."); }'
+    {
+        ShortString Name;
+        Integer NameLength;
+        Guid PersonID;
+
+        FilterBy PersonFilter
+            '(repository, parameter) =>
+            {
+                // Always separate parameters to prevent SQL injection.
+                string sql = "EXEC Bookstore.ComputePersonInfo @p0, @p1";
+                var sqlParams = new object[] { parameter.NamePattern, parameter.LimitResultCount };
+
+                var result = _executionContext.EntityFrameworkContext.Database
+                    .SqlQuery<Bookstore.PersonInfo>(sql, sqlParams)
+                    .ToArray();
+                return result;
+            }';
+    }
+
+     SqlView BooksView 'SELECT * FROM Bookstore.Book'
+    {
+        AutoDetectSqlDependencies;
+    }
+}
