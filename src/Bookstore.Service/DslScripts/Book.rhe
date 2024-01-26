@@ -11,6 +11,8 @@ AutoDetectSqlDependencies;
         Reference Author Bookstore.Person;
         Reference CreatedBy Common.Principal { CreatedBy; }
 
+        DateTime ModificationDateTime { LastModifiedTime; }
+
         ItemFilter LongBooks 'item => item.NumberOfPages >= 500';
         
         Logging { AllProperties; }
@@ -163,43 +165,6 @@ AutoDetectSqlDependencies;
         Take NumberOfComments 'Extension_BookInfo.NumberOfComments';
     }
 
-    Computed ExpectedBookRating 'repository =>
-        {
-            var books = repository.Bookstore.Book.Query()
-                .Select(b =>
-                    new
-                    {
-                        b.ID,
-                        b.Title,
-                        IsForeign = b.Extension_ForeignBook.ID != null
-                    })
-                .ToList();
-
-            var ratings = new List<ExpectedBookRating>();
-            foreach (var book in books)
-            {
-                decimal rating = 0;
-
-                if (book.Title?.IndexOf("super", StringComparison.InvariantCultureIgnoreCase) >= 0)
-                    rating += 100;
-
-                if (book.Title?.IndexOf("great", StringComparison.InvariantCultureIgnoreCase) >= 0)
-                    rating += 50;
-
-                if (book.IsForeign)
-                    rating *= 1.2m;
-
-                ratings.Add(new ExpectedBookRating { ID = book.ID, Rating = rating });
-            }
-
-            return ratings.ToArray();
-        }'
-    {
-        Extends Bookstore.Book;
-        Decimal Rating;
-    }
-
-
     Entity Shipment
     {
         ShortString TargetAddress;
@@ -337,7 +302,7 @@ AutoDetectSqlDependencies;
         DateTime EffectiveSince;
         Reference Shipment;
         Reference NewStatus Bookstore.ShipmentStatus;
-    }
+    }   
 
     Entity ApproveShipment
     {
@@ -405,6 +370,9 @@ AutoDetectSqlDependencies;
         ShortString LastName { Required; }
         ShortString FirstName { Required; }
         ShortString Code { RegExMatch "\d{7,10}" "Code must have 7 to 10 digits."; }
+
+        ShortString VAT {Unique;}
+
         DateTime WorkStarted { Required; }
         DateTime WorkFinished;
         Integer TestPeriod { MinValue 1; MaxValue 12; }
@@ -412,9 +380,33 @@ AutoDetectSqlDependencies;
 
         UniqueMultiple 'LastName FirstName';
 
-        ItemFilter FinishBeforeStart 'employee => employee.WorkFinished != null
-            && employee.WorkFinished.Value < employee.WorkStarted.Value';
+        ItemFilter FinishBeforeStart 'employee => employee.WorkFinished != null && employee.WorkFinished.Value < employee.WorkStarted.Value';
         InvalidData FinishBeforeStart 'It is not allowed to enter a WorkFinished time before the WorkStarted time.';
+    }
+
+    Entity Manager
+    {
+        Extends Bookstore.Employee;
+        ShortString Bonus;
+    }
+
+    Entity EducationRecord
+    {
+        Reference Employee{ Detail; }
+        DateTime DateTime;
+        ShortString Info;
+    }
+    Entity Department
+    {
+        ShortString Code {AutoCode; }
+        LongString Description;
+    }
+    Entity EmployeeDepartment
+    {
+        Reference Employee;
+        Reference Department;
+
+        UniqueMultiple 'Employee Department';
     }
 
      Action CreatePrincipal '(parameter, repository, userInfo) =>
@@ -474,4 +466,6 @@ AutoDetectSqlDependencies;
     {
         AutoDetectSqlDependencies;
     }
+
+    
 }

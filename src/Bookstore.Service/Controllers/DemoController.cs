@@ -1,7 +1,11 @@
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Rhetos;
 using Rhetos.Processing;
 using Rhetos.Processing.DefaultCommands;
+using System.Security.Claims;
 
 namespace Bookstore.Service.Controllers
 {
@@ -33,6 +37,17 @@ namespace Bookstore.Service.Controllers
             processingEngine.Execute(saveCommandInfo);
             unitOfWork.CommitAndClose(); // Commits and closes database transaction.
             return "1 book inserted.";
+        }
+
+        [HttpGet]
+        [AllowAnonymous]
+        public async Task Login()
+        {
+            var claimsIdentity = new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "SampleUser") }, CookieAuthenticationDefaults.AuthenticationScheme);
+
+            await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
+                new ClaimsPrincipal(claimsIdentity),
+                new AuthenticationProperties() { IsPersistent = true });
         }
     }
 }
