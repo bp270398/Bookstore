@@ -5,7 +5,9 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Bookstore.Service", "src\Bookstore.Service\Bookstore.Service.csproj", "{F882E53D-ECB7-4CEF-80E9-93343B3A54DC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bookstore.RhetosExtensions", "Bookstore.RhetosExtensions\Bookstore.RhetosExtensions.csproj", "{4D218018-53BC-4D8A-8CA6-D83DEBFB2879}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Bookstore.RhetosExtensions", "Bookstore.RhetosExtensions\Bookstore.RhetosExtensions.csproj", "{4D218018-53BC-4D8A-8CA6-D83DEBFB2879}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bookstore.Service.Test", "Bookstore.Service.Test\Bookstore.Service.Test.csproj", "{8A17D1A6-CA9A-4A4E-9431-936DD6515701}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +23,10 @@ Global
 		{4D218018-53BC-4D8A-8CA6-D83DEBFB2879}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4D218018-53BC-4D8A-8CA6-D83DEBFB2879}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4D218018-53BC-4D8A-8CA6-D83DEBFB2879}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8A17D1A6-CA9A-4A4E-9431-936DD6515701}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8A17D1A6-CA9A-4A4E-9431-936DD6515701}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8A17D1A6-CA9A-4A4E-9431-936DD6515701}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8A17D1A6-CA9A-4A4E-9431-936DD6515701}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
